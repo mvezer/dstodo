@@ -14,7 +14,7 @@ let todoBuffer = [];
 let doneBuffer = [];
 
 // ---------- basic functions
-const loadBuffer = (fName) => {
+const loadFile = (fName) => {
   let buffer;
   try {
     buffer = fs.readFileSync(fName, 'utf8');
@@ -22,11 +22,20 @@ const loadBuffer = (fName) => {
     console.log(`Error: could not read file '${fName}'`);
     process.exit(1);
   }
-  return buffer.split('\n');
+  return buffer.split('\n')
+}
+const loadBuffer = (fName) => {
+  return loadFile(fName).map(extractLine);
 }
 const saveBuffer = (fName, buffer) => {
   try {
-    fs.writeFileSync(fName, buffer.join('\n'), 'utf8');
+    fs.writeFileSync(
+      fName,
+      buffer
+        .map(compressLine)
+        .join('\n'),
+      'utf8'
+    );
   } catch (error) {
     console.log(`Error: could not write file '${fName}'`);
     process.exit(1);
@@ -123,7 +132,7 @@ const parseDate = (dateStr) => {
 const addLineToBuffer = (buffer, newLine) => {
   // find first empty line in the buffer    
   let lineIdx = 0;
-  while (lineIdx < buffer.length && buffer[lineIdx].length) {
+  while (lineIdx < buffer.length && buffer[lineIdx].task.length) {
     lineIdx++;
   }
   const res = lineIdx < buffer.length ? lineIdx : buffer.length;
@@ -133,19 +142,63 @@ const addLineToBuffer = (buffer, newLine) => {
 }
 
 // ---------- line manipulation
-const addLinePrefix = (line, prefix) => {
-  return '[' + prefix.trimStart().trimEnd() + '] ' + line.trimStart().trimEnd();
+const extractLine = (rawLine) => {
+  const line = rawLine
+    .trimStart()
+    .trimEnd();
+  const isPrio = line.charAt(0) == '*';
+  let dueDate = null;
+  let dueStart = line.indexOf('[');
+  let dueEnd = -1;
+  if (dueStart > -1) {
+    dueEnd = line.indexOf(']', dueStart + 1);
+  }
+  if (dueStart > -1 && dueEnd > -1) {
+    dueDate = parseDate(line.slice(dueStart + 1, dueEnd));
+  }
+  let taskStart = 0;
+  if (dueEnd > -1) {
+    taskStart = dueEnd + 1;
+  } else if (isPrio) {
+    taskStart = 2;
+  }
+  const task = line
+    .slice(taskStart)
+    .trimStart()
+    .trimEnd();
+
+  return {
+    isPrio,
+    dueDate,
+    task,
+  };
+}
+const compressLine = (line) => {
+  let str = line.isPrio ? '* ' : '';
+  if (line.dueDate) {
+    str += '[' + formatDate(line.dueDate) + '] ';
+  }
+  str += line.task;
+  return str;
+}
+const renderLine = (idx, line) => {
+  let str = String(idx).padStart(2, ' ');
+  str += String(line.isPrio ? '*' : '').padStart(2, ' ');
+  str += String(line.dueDate ? formatDate(line.dueDate) : '').padStart(dateFormat.length + 1, ' ');
+  str += ' ' + line.task;
+
+  return str;
 }
 
 // ---------- command implementations
 const addCommand = (args) => {
-  const line = args[0];
-  let date;
+  const task = args[0];
+  let dueDate = null;
   let isPrio = false;
   if (args.length > 1) {
     const cmd = parseCommand(args[1]);    
     if (!cmd) { // this must be a date
-      date = formatDate(parseDate(args[1]));
+      dueDate = parseDate(args[1]);
     } else {
       if (cmd.name === 'prioritize') {
         isPrio = true;
@@ -155,14 +208,21 @@ const addCommand = (args) => {
       }
     }
   }
-  const newLineIdx = addLineToBuffer(todoBuffer, line);  
-  if (date) {
-    todoBuffer[newLineIdx] = addLinePrefix(line, date);
-  } else if (isPrio) {
-    todoBuffer[newLineIdx] = addLinePrefix(line, '*');
-  }
+
+  const newLineIdx = addLineToBuffer(
+    todoBuffer,
+    {
+      isPrio,
+      dueDate,
+      task,
+    },
+  );
   saveBuffer(todoTxt, todoBuffer);
-  console.log(newLineIdx, todoBuffer[newLineIdx]);
+  console.log(renderLine(newLineIdx, todoBuffer[newLineIdx]));
+}
+
+const listCommand = (args) => {
+  console.log('ERROR: not yet implemented');
 }
 
 const COMMAND_MAP = [
@@ -180,6 +240,13 @@ const COMMAND_MAP = [
     maxParamCount: 2,
     callback: addCommand,
   },
+  {
+    name: 'list',
+    aliases: ['list', 'ls', 'll', 'l'],
+    minParamCount: 1,
+    maxParamCount: 2,
+    callback: listCommand,
+  },
 ];
 
 // ---------- usage
@@ -192,7 +259,7 @@ if (!configFile) {
   console.log('Error: cannot find config');
   process.exit(1);
 }
-const config = parseIni(loadBuffer(configFile));
+const config = parseIni(loadFile(configFile));
 const todoTxt = (config.get('TXT_DIR') || __dirname) + '/todo.txt';
 const doneTxt = (config.get('TXT_DIR') || __dirname) + '/done.txt'; 
 const dateFormat = config.get('DATE_FORMAT') || DEFAULT_DATE_FORMAT;
@@ -200,6 +267,7 @@ const dateFormat = config.get('DATE_FORMAT') || DEFAULT_DATE_FORMAT;
 // --------- load buffers
 if (fileExists(todoTxt)) {
   todoBuffer = loadBuffer(todoTxt);
+  console.log(JSON.stringify(todoBuffer, null, 4));
 }
 if (fileExists(doneTxt)) {
   doneBuffer = loadBuffer(doneTxt);
