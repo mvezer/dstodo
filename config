@@ -1,0 +1,3 @@
+# Config example 
+# TXT_DIR=~/.dstodo
+DATE_FORMAT=dd-mm-yyyy
