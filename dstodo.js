@@ -109,7 +109,44 @@ const formatDate = (dateTime) => {
     .replace(monthStr, String(dateTime.getMonth() + 1).padStart(monthStr.length, '0'))
     .replace(yearStr, String(dateTime.getFullYear()).padStart(yearStr.length, '0'));
 }
+const getWeekdayFromDateTime = (dateTime) => {
+  let dayIdx = dateTime.getDay() - 1;
+  if (dayIdx < 0) {
+    dayIdx = 6;
+  }
+  return WEEKDAY_MAP[dayIdx];
+}
+const parseWeekday = (dayStr) => {
+  let dayIdx = 0;
+  while (dayIdx < WEEKDAY_MAP.length && !WEEKDAY_MAP[dayIdx].aliases.includes(String(dayStr).toLowerCase())) {
+    dayIdx++;
+  }
+  return dayIdx < WEEKDAY_MAP.length ? WEEKDAY_MAP[dayIdx] : null;
+}
 const parseDate = (dateStr) => {
+  const str = dateStr.toLowerCase();
+  const today = new Date();
+  if ([ 'today', 'tday' ].includes(str)) {
+    return today;
+  }
+  if (str === 'tomorrow') {
+    const tomorroTSw = (new Date()).setDate(today.getDate() + 1);
+    return new Date(tomorrowTS);
+  }
+  if ([ 'nextweek', 'nweek' ].includes(str)) {
+    const nextweekTS = (new Date()).setDate(today.getDate() + 7);
+    return new Date(nextweekTS);
+  }
+  const wDay = parseWeekday(str);
+  if (wDay) {
+    const todayWeekDay = getWeekdayFromDateTime(today);
+    const increment = todayWeekDay.offset <= wDay.offset
+      ? wDay.offset - todayWeekDay.offset
+      : wDay.offset - todayWeekDay.offset + 7;
+
+    const targetDayTS = (new Date()).setDate(today.getDate() + increment);
+    return new Date(targetDayTS);
+  }
   const dayStart = dateFormat.indexOf('d');
   const dayStop = dateFormat.lastIndexOf('d') + 1;
   const monthStart = dateFormat.indexOf('m');
@@ -199,6 +236,7 @@ const addCommand = (args) => {
     const cmd = parseCommand(args[1]);    
     if (!cmd) { // this must be a date
       dueDate = parseDate(args[1]);
+      console.log(formatDate(dueDate));
     } else {
       if (cmd.name === 'prioritize') {
         isPrio = true;
@@ -248,6 +286,43 @@ const COMMAND_MAP = [
     callback: listCommand,
   },
 ];
+const WEEKDAY_MAP = [
+  {
+    name: 'Monday',
+    aliases: [ 'monday', 'mon', 'mo' ],
+    offset: 0,
+  },
+  {
+    name: 'Tuesday',
+    aliases: [ 'tuesday', 'tue', 'tu' ],
+    offset: 1,
+  },
+  {
+    name: 'Wednesday',
+    aliases: [ 'wednesday', 'wed', 'we' ],
+    offset: 2,
+  },
+  {
+    name: 'Thursday',
+    aliases: [ 'thursday', 'thu', 'th' ],
+    offset: 3,
+  },
+  {
+    name: 'Friday',
+    aliases: [ 'friday', 'fri', 'fr' ],
+    offset: 4,
+  },
+  {
+    name: 'Saturday',
+    aliases: [ 'saturday', 'sat', 'sa' ],
+    offset: 5,
+  },
+  {
+    name: 'Sunday',
+    aliases: [ 'sunday', 'sun', 'su' ],
+    offset: 6,
+  },
+];
 
 // ---------- usage
 const usage = () => {
@@ -267,7 +342,6 @@ const dateFormat = config.get('DATE_FORMAT') || DEFAULT_DATE_FORMAT;
 // --------- load buffers
 if (fileExists(todoTxt)) {
   todoBuffer = loadBuffer(todoTxt);
-  console.log(JSON.stringify(todoBuffer, null, 4));
 }
 if (fileExists(doneTxt)) {
   doneBuffer = loadBuffer(doneTxt);
