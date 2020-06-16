@@ -25,7 +25,7 @@ const loadFile = (fName) => {
   return buffer.split('\n')
 }
 const loadBuffer = (fName) => {
-  return loadFile(fName).map(extractLine);
+  return loadFile(fName).map((line, idx) => extractLine(line, idx));
 }
 const saveBuffer = (fName, buffer) => {
   try {
@@ -144,7 +144,6 @@ const parseDate = (dateStr) => {
       ? wDay.offset - todayWeekDay.offset
       : wDay.offset - todayWeekDay.offset + 7;
 
-    const targetDayTS = (new Date()).setDate(today.getDate() + increment);
     return new Date(targetDayTS);
   }
   const dayStart = dateFormat.indexOf('d');
@@ -166,20 +165,23 @@ const parseDate = (dateStr) => {
 }
 
 // ---------- buffer manipulation
-const addLineToBuffer = (buffer, newLine) => {
+const addLineToBuffer = (buffer, line) => {
   // find first empty line in the buffer    
-  let lineIdx = 0;
-  while (lineIdx < buffer.length && buffer[lineIdx].task.length) {
-    lineIdx++;
+  const emptyIdx = buffer.findIndex(line => !line.task);
+  const newLine = line;
+  if (emptyIdx > -1) {
+    newLine.idx = emptyIdx;
+    buffer[emptyIdx] = newLine;
+  } else {
+    newLine.idx = buffer.length;
+    buffer.push(newLine);
   }
-  const res = lineIdx < buffer.length ? lineIdx : buffer.length;
-  lineIdx >= buffer.length ? buffer.push(newLine) : buffer[lineIdx] = newLine;
 
-  return res;
+  return newLine;
 }
 
 // ---------- line manipulation
-const extractLine = (rawLine) => {
+const extractLine = (rawLine, idx) => {
   const line = rawLine
     .trimStart()
     .trimEnd();
@@ -205,6 +207,7 @@ const extractLine = (rawLine) => {
     .trimEnd();
 
   return {
+    idx,
     isPrio,
     dueDate,
     task,
@@ -218,8 +221,8 @@ const compressLine = (line) => {
   str += line.task;
   return str;
 }
-const renderLine = (idx, line) => {
-  let str = String(idx).padStart(2, ' ');
+const renderLine = (line) => {
+  let str = String(line.idx).padStart(2, ' ');
   str += String(line.isPrio ? '*' : '').padStart(2, ' ');
   str += String(line.dueDate ? formatDate(line.dueDate) : '').padStart(dateFormat.length + 1, ' ');
   str += ' ' + line.task;
@@ -236,7 +239,6 @@ const addCommand = (args) => {
     const cmd = parseCommand(args[1]);    
     if (!cmd) { // this must be a date
       dueDate = parseDate(args[1]);
-      console.log(formatDate(dueDate));
     } else {
       if (cmd.name === 'prioritize') {
         isPrio = true;
@@ -247,7 +249,7 @@ const addCommand = (args) => {
     }
   }
 
-  const newLineIdx = addLineToBuffer(
+  const newLine = addLineToBuffer(
     todoBuffer,
     {
       isPrio,
@@ -256,11 +258,39 @@ const addCommand = (args) => {
     },
   );
   saveBuffer(todoTxt, todoBuffer);
-  console.log(renderLine(newLineIdx, todoBuffer[newLineIdx]));
+  console.log(renderLine(newLine));
 }
 
 const listCommand = (args) => {
-  console.log('ERROR: not yet implemented');
+  const filterDate = args.length > 1 ? parseDate(args[1]) : null;
+  todoBuffer
+    .filter((line) => {
+      if (!filterDate) {
+        return true;
+      }
+      return line.dueDate.getTime() == filterDate.getTime() || line.isPrio;
+    })
+    .sort((a, b) => {
+      if (a.dueDate && b.dueDate) {
+        return a.dueDate.getTime() - b.dueDate.getTime(); 
+      } else if (a.dueDate && !b.dueDate) {
+        return -1;
+      } else if (!a.dueDate && b.dueDate) {
+        return 1;
+      } else {
+        return 0;
+      }
+    })
+    .sort((a, b) => {
+      if (a.isPrio && !b.isPrio) {
+        return -1;
+      } else if (a.isPrio && b.isPrio) {
+        return 0;
+      } else {
+        return 1;
+      }
+    })
+    .forEach((line) => { console.log(renderLine(line))});
 }
 
 const COMMAND_MAP = [
