@@ -1,6 +1,75 @@
 #!/usr/bin/env node
 const fs = require('fs');
 
+// ----------- constants
+const WEEKDAY_MAP = [
+  {
+    name: 'Monday',
+    aliases: [ 'monday', 'mon', 'mo' ],
+    offset: 0,
+  },
+  {
+    name: 'Tuesday',
+    aliases: [ 'tuesday', 'tue', 'tu' ],
+    offset: 1,
+  },
+  {
+    name: 'Wednesday',
+    aliases: [ 'wednesday', 'wed', 'we' ],
+    offset: 2,
+  },
+  {
+    name: 'Thursday',
+    aliases: [ 'thursday', 'thu', 'th' ],
+    offset: 3,
+  },
+  {
+    name: 'Friday',
+    aliases: [ 'friday', 'fri', 'fr' ],
+    offset: 4,
+  },
+  {
+    name: 'Saturday',
+    aliases: [ 'saturday', 'sat', 'sa' ],
+    offset: 5,
+  },
+  {
+    name: 'Sunday',
+    aliases: [ 'sunday', 'sun', 'su' ],
+    offset: 6,
+  },
+];
+const COLOR_MAP = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  underscore: '\x1b[4m',
+  blink: '\x1b[5m',
+  reverse: '\x1b[7m',
+  hidden: '\x1b[8m',
+  fg: {
+    black: '\x1b[30m',
+    red: '\x1b[31m',
+    green: '\x1b[32m',
+    yellow: '\x1b[33m',
+    blue: '\x1b[34m',
+    magenta: '\x1b[35m',
+    cyan: '\x1b[36m',
+    white: '\x1b[37m',
+  },
+  bg: {
+    black: '\x1b[40m',
+    red: '\x1b[41m',
+    green: '\x1b[42m',
+    yellow: '\x1b[43m',
+    blue: '\x1b[44m',
+    magenta: '\x1b[45m',
+    cyan: '\x1b[46m',
+    white: '\x1b[47m',
+  },
+};
+
+// ---------- DEFAULTS
 const HOME_DIR = require('os').homedir();
 const COMMENT_CHR = '#';
 const CONFIG_LOCATION = [
@@ -9,7 +78,16 @@ const CONFIG_LOCATION = [
   HOME_DIR + '/.dstodo.cfg',
   __dirname + '/config'
 ];
+const DEFAULT_PRIO_COLOR = COLOR_MAP.fg.magenta;
+const DEFAULT_TODAY_COLOR = COLOR_MAP.fg.yellow;
+const DEFAULT_OVERDUE_COLOR = COLOR_MAP.fg.red;
+const DEFAULT_TOMORROW_COLOR = COLOR_MAP.fg.cyan;
+const DEFAULT_WEEK_COLOR = COLOR_MAP.fg.blue;
+const DEFAULT_DONE_COLOR = COLOR_MAP.fg.green;
 const DEFAULT_DATE_FORMAT = 'dd-mm-yyy';
+
+const DAY_TS = 24 * 60 * 60 * 1000; // one day in millisecs
+
 let todoBuffer = [];
 let doneBuffer = [];
 
@@ -222,10 +300,33 @@ const compressLine = (line) => {
   return str;
 }
 const renderLine = (line) => {
-  let str = String(line.idx).padStart(2, ' ');
+  let color = null;
+  const todayTS = parseInt((new Date()).getTime() / DAY_TS);
+  if (line.isPrio) {
+    color = prioColor;
+  } else if (line.dueDate) {
+    const dayDifference = parseInt(line.dueDate.getTime() / DAY_TS) - todayTS;
+    if (dayDifference < 0) {
+      color = overdueColor;
+    } else if (dayDifference === 0) {
+      color = todayColor;
+    } else if (dayDifference === 1) {
+      color = tomorrowColor;
+    } else if (dayDifference < 7) {
+      color = weekColor;
+    }
+  }
+  let str = '';
+  if (color) {
+    str += color;
+  }
+  str += String(line.idx).padStart(2, ' ');
   str += String(line.isPrio ? '*' : '').padStart(2, ' ');
   str += String(line.dueDate ? formatDate(line.dueDate) : '').padStart(dateFormat.length + 1, ' ');
   str += ' ' + line.task;
+  if (color) {
+    str += COLOR_MAP.reset;
+  }
 
   return str;
 }
@@ -316,43 +417,6 @@ const COMMAND_MAP = [
     callback: listCommand,
   },
 ];
-const WEEKDAY_MAP = [
-  {
-    name: 'Monday',
-    aliases: [ 'monday', 'mon', 'mo' ],
-    offset: 0,
-  },
-  {
-    name: 'Tuesday',
-    aliases: [ 'tuesday', 'tue', 'tu' ],
-    offset: 1,
-  },
-  {
-    name: 'Wednesday',
-    aliases: [ 'wednesday', 'wed', 'we' ],
-    offset: 2,
-  },
-  {
-    name: 'Thursday',
-    aliases: [ 'thursday', 'thu', 'th' ],
-    offset: 3,
-  },
-  {
-    name: 'Friday',
-    aliases: [ 'friday', 'fri', 'fr' ],
-    offset: 4,
-  },
-  {
-    name: 'Saturday',
-    aliases: [ 'saturday', 'sat', 'sa' ],
-    offset: 5,
-  },
-  {
-    name: 'Sunday',
-    aliases: [ 'sunday', 'sun', 'su' ],
-    offset: 6,
-  },
-];
 
 // ---------- usage
 const usage = () => {
@@ -368,6 +432,13 @@ const config = parseIni(loadFile(configFile));
 const todoTxt = (config.get('TXT_DIR') || __dirname) + '/todo.txt';
 const doneTxt = (config.get('TXT_DIR') || __dirname) + '/done.txt'; 
 const dateFormat = config.get('DATE_FORMAT') || DEFAULT_DATE_FORMAT;
+
+const overdueColor = config.get('OVERDUE_COLOR') || DEFAULT_OVERDUE_COLOR;
+const todayColor = config.get('TODAY_COLOR') || DEFAULT_TODAY_COLOR;
+const tomorrowColor = config.get('TOMORROW_COLOR') || DEFAULT_TOMORROW_COLOR;
+const doneColor = config.get('DONE_COLOR') || DEFAULT_DONE_COLOR;
+const weekColor = config.get('WEEK_COLOR') || DEFAULT_WEEK_COLOR;
+const prioColor = config.get('PRIO_COLOR') || DEFAULT_PRIO_COLOR;
 
 // --------- load buffers
 if (fileExists(todoTxt)) {
