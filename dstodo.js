@@ -490,6 +490,43 @@ const undoneCommand = (args) => {
   console.log(`The task: "${renderLine(undoneLine)}" is undone`);
 }
 
+const prioCommand = (args) => {
+  const idx = args[0];
+  const prioLine = fetchLineFromBuffer(todoBuffer, idx);
+  todoBuffer[idx].isPrio = true;
+  prioLine.isPrio = true;
+  saveBuffer(todoTxt, todoBuffer);
+  console.log(`The task "${renderLine(prioLine)}" is a priority now`);
+}
+
+const deprioCommand = (args) => {
+  const idx = args[0];
+  const deprioLine = fetchLineFromBuffer(todoBuffer, idx);
+  todoBuffer[idx].isPrio = false;
+  deprioLine.isPrio = false;
+  saveBuffer(todoTxt, todoBuffer);
+  console.log(`The task "${renderLine(deprioLine)}" is no priority anymore`);
+}
+
+const dueCommand = (args) => {
+  const idx = args[0];
+  const dueDate = parseDate(args[1]);
+  const dueLine = fetchLineFromBuffer(todoBuffer, idx);
+  todoBuffer[idx].dueDate = dueDate;
+  dueLine.dueDate = dueDate;
+  saveBuffer(todoTxt, todoBuffer);
+  console.log(`The task "${renderLine(dueLine)}" duedate is set`);
+}
+
+const removeDueCommand = (args) => {
+  const idx = args[0];
+  const dueLine = fetchLineFromBuffer(todoBuffer, idx);
+  todoBuffer[idx].dueDate = null;
+  dueLine.dueDate = null;
+  saveBuffer(todoTxt, todoBuffer);
+  console.log(`The task "${renderLine(dueLine)}" duedate is removed`);
+}
+
 const COMMAND_MAP = [
   {
     name: 'add',
@@ -503,7 +540,28 @@ const COMMAND_MAP = [
     aliases: ['prioritize', 'priorize', 'prio', 'pri', 'p'],
     minParamCount: 1,
     maxParamCount: 1,
-    callback: addCommand,
+    callback: prioCommand,
+  },
+  {
+    name: 'deprioritize',
+    aliases: ['deprioritize', 'depriorize', 'deprio', 'depri', 'dep'],
+    minParamCount: 1,
+    maxParamCount: 1,
+    callback: deprioCommand,
+  },
+  {
+    name: 'setduedate',
+    aliases: ['setduedate', 'setdue', 'due'],
+    minParamCount: 2,
+    maxParamCount: 2,
+    callback: dueCommand,
+  },
+  {
+    name: 'removeduedate',
+    aliases: ['removeduedate', 'removedue', 'rdue'],
+    minParamCount: 1,
+    maxParamCount: 1,
+    callback: removeDueCommand,
   },
   {
     name: 'list',
