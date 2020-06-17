@@ -208,7 +208,7 @@ const parseDate = (dateStr) => {
     return today;
   }
   if (str === 'tomorrow') {
-    const tomorroTSw = (new Date()).setDate(today.getDate() + 1);
+    const tomorrowTS = (new Date()).setDate(today.getDate() + 1);
     return new Date(tomorrowTS);
   }
   if ([ 'nextweek', 'nweek' ].includes(str)) {
@@ -221,8 +221,9 @@ const parseDate = (dateStr) => {
     const increment = todayWeekDay.offset <= wDay.offset
       ? wDay.offset - todayWeekDay.offset
       : wDay.offset - todayWeekDay.offset + 7;
+    const targetDayTS = (new Date()).setDate(today.getDate() + increment);
 
-    return new Date(targetDayTS);
+    return new Date(new Date(targetDayTS));
   }
   const dayStart = dateFormat.indexOf('d');
   const dayStop = dateFormat.lastIndexOf('d') + 1;
@@ -256,6 +257,25 @@ const addLineToBuffer = (buffer, line) => {
   }
 
   return newLine;
+}
+
+const fetchLineFromBuffer = (buffer, idx) => {
+  if (idx < 0 || idx >= buffer.length) {
+    console.log(`ERROR: index (${idx}) cannot be found`);
+    process.exit(1);
+  }
+  return buffer[idx];
+}
+
+const removeLineFromBuffer = (buffer, idx) => {
+  const lineToRemove = fetchLineFromBuffer(buffer, idx);
+  buffer[idx] = {
+    isPrio: false,
+    dueDate: null,
+    task: '',
+  };
+  saveBuffer(todoTxt, todoBuffer);
+  return lineToRemove;
 }
 
 // ---------- line manipulation
@@ -299,36 +319,75 @@ const compressLine = (line) => {
   str += line.task;
   return str;
 }
-const renderLine = (line) => {
+const renderLine = (line, colorOverride) => {
   let color = null;
   const todayTS = parseInt((new Date()).getTime() / DAY_TS);
-  if (line.isPrio) {
-    color = prioColor;
-  } else if (line.dueDate) {
-    const dayDifference = parseInt(line.dueDate.getTime() / DAY_TS) - todayTS;
-    if (dayDifference < 0) {
-      color = overdueColor;
-    } else if (dayDifference === 0) {
-      color = todayColor;
-    } else if (dayDifference === 1) {
-      color = tomorrowColor;
-    } else if (dayDifference < 7) {
-      color = weekColor;
+  if (colorOverride) {
+    color = colorOverride;
+  } else {
+    if (line.isPrio) {
+      color = prioColor;
+    } else if (line.dueDate) {
+      const dayDifference = parseInt(line.dueDate.getTime() / DAY_TS) - todayTS;
+      if (dayDifference < 0) {
+        color = overdueColor;
+      } else if (dayDifference === 0) {
+        color = todayColor;
+      } else if (dayDifference === 1) {
+        color = tomorrowColor;
+      } else if (dayDifference < 7) {
+        color = weekColor;
+      }
     }
   }
+
   let str = '';
   if (color) {
     str += color;
   }
   str += String(line.idx).padStart(2, ' ');
   str += String(line.isPrio ? '*' : '').padStart(2, ' ');
-  str += String(line.dueDate ? formatDate(line.dueDate) : '').padStart(dateFormat.length + 1, ' ');
+  str += '[' + String(line.dueDate ? formatDate(line.dueDate) : '').padStart(dateFormat.length, ' ') + ']';
   str += ' ' + line.task;
   if (color) {
     str += COLOR_MAP.reset;
   }
 
   return str;
+}
+
+// ---------- sorting and filtering
+const emptyLineFilter = (line) => {
+  return !!(line.task.length);
+}
+
+const dueDateLineFilter = (filterDate, line) => {
+  if (!filterDate) {
+    return true;
+  }
+  return line.dueDate.getTime() == filterDate.getTime() || line.isPrio;
+}
+
+const dueDateLineSort = (a, b) => {
+  if (a.dueDate && b.dueDate) {
+    return a.dueDate.getTime() - b.dueDate.getTime(); 
+  } else if (a.dueDate && !b.dueDate) {
+    return -1;
+  } else if (!a.dueDate && b.dueDate) {
+    return 1;
+  } else {
+    return 0;
+  }
+}
+
+const prioLineSort = (a, b) => {
+  if (a.isPrio && !b.isPrio) {
+    return -1;
+  } else if (a.isPrio && b.isPrio) {
+    return 0;
+  } else {
+    return 1;
+  }
 }
 
 // ---------- command implementations
@@ -364,34 +423,50 @@ const addCommand = (args) => {
 
 const listCommand = (args) => {
   const filterDate = args.length > 1 ? parseDate(args[1]) : null;
-  todoBuffer
-    .filter((line) => {
-      if (!filterDate) {
-        return true;
-      }
-      return line.dueDate.getTime() == filterDate.getTime() || line.isPrio;
-    })
-    .sort((a, b) => {
-      if (a.dueDate && b.dueDate) {
-        return a.dueDate.getTime() - b.dueDate.getTime(); 
-      } else if (a.dueDate && !b.dueDate) {
-        return -1;
-      } else if (!a.dueDate && b.dueDate) {
-        return 1;
-      } else {
-        return 0;
-      }
-    })
-    .sort((a, b) => {
-      if (a.isPrio && !b.isPrio) {
-        return -1;
-      } else if (a.isPrio && b.isPrio) {
-        return 0;
-      } else {
-        return 1;
-      }
-    })
-    .forEach((line) => { console.log(renderLine(line))});
+  const todoList = todoBuffer
+    .filter(emptyLineFilter)
+    .filter(dueDateLineFilter.bind(this, filterDate))
+    .sort(dueDateLineSort)
+    .sort(prioLineSort);
+
+  const doneList = doneBuffer
+    .filter(emptyLineFilter)
+    .filter(dueDateLineFilter.bind(this, filterDate))
+    .sort(dueDateLineSort)
+    .sort(prioLineSort);
+  
+  if (todoList.length) {
+    console.log('');
+    console.log(`Todos (${todoList.length}):`);
+    console.log('--------------------------------------------------');
+    todoList
+      .forEach((line) => { console.log(renderLine(line))});
+    console.log('');
+  }
+  if (doneList.length) {
+    console.log(`Done (${doneList.length}):`);
+    console.log('--------------------------------------------------');
+    doneList
+      .forEach((line) => { console.log(renderLine(line, doneColor))});
+    console.log('');
+  }
+  
+}
+
+const removeCommand = (args) => {
+  const idx = args[0];
+  const removedLine = removeLineFromBuffer(todoBuffer, idx);
+  console.log(`The task: "${renderLine(removedLine)}" got deleted`);
+}
+
+const doneCommand = (args) => {
+  const idx = args[0];
+  const doneLine = fetchLineFromBuffer(todoBuffer, idx);
+  removeLineFromBuffer(todoBuffer, idx);
+  addLineToBuffer(doneBuffer, doneLine);
+  saveBuffer(todoTxt, todoBuffer);
+  saveBuffer(doneTxt, doneBuffer);
+  console.log(`The task: "${renderLine(doneLine)}" is done! :)`);
 }
 
 const COMMAND_MAP = [
@@ -406,15 +481,29 @@ const COMMAND_MAP = [
     name: 'prioritize',
     aliases: ['prioritize', 'priorize', 'prio', 'pri', 'p'],
     minParamCount: 1,
-    maxParamCount: 2,
+    maxParamCount: 1,
     callback: addCommand,
   },
   {
     name: 'list',
     aliases: ['list', 'ls', 'll', 'l'],
-    minParamCount: 1,
-    maxParamCount: 2,
+    minParamCount: 0,
+    maxParamCount: 1,
     callback: listCommand,
+  },
+  {
+    name: 'remove',
+    aliases: ['remove', 'rm', 'delete'],
+    minParamCount: 1,
+    maxParamCount: 1,
+    callback: removeCommand,
+  },
+  {
+    name: 'done',
+    aliases: ['done', 'do'],
+    minParamCount: 1,
+    maxParamCount: 1,
+    callback: doneCommand,
   },
 ];
 
@@ -458,4 +547,8 @@ if (process.argv.length < 3) {
 const commandArgIdx = 2; // when we have options it needs to be calculated
 const command = parseCommand(process.argv[commandArgIdx]);
 const commandParams = process.argv.slice(commandArgIdx + 1);
+if (commandParams.length < command.minParamCount || commandParams.length > command.maxParamCount) {
+  console.log(`ERROR: invalid parameter count for the "${command.name}" command`); 
+  process.exit(1);
+}
 command.callback(commandParams);
