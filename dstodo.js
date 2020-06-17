@@ -274,7 +274,6 @@ const removeLineFromBuffer = (buffer, idx) => {
     dueDate: null,
     task: '',
   };
-  saveBuffer(todoTxt, todoBuffer);
   return lineToRemove;
 }
 
@@ -456,6 +455,7 @@ const listCommand = (args) => {
 const removeCommand = (args) => {
   const idx = args[0];
   const removedLine = removeLineFromBuffer(todoBuffer, idx);
+  saveBuffer(todoTxt, todoBuffer);
   console.log(`The task: "${renderLine(removedLine)}" got deleted`);
 }
 
@@ -467,6 +467,27 @@ const doneCommand = (args) => {
   saveBuffer(todoTxt, todoBuffer);
   saveBuffer(doneTxt, doneBuffer);
   console.log(`The task: "${renderLine(doneLine)}" is done! :)`);
+}
+
+const archiveCommand = () => {
+  const archiveLines = doneBuffer.reduce((arch, line) => {
+    return arch.concat(compressLine(line),' \n'); 
+  }, '');
+  if (archiveLines) {
+    fs.appendFileSync(archiveTxt, archiveLines);
+    fs.truncateSync(doneTxt, 0);
+    console.log('Archived all done tasks');
+  }
+}
+
+const undoneCommand = (args) => {
+  const idx = args[0];
+  const undoneLine = fetchLineFromBuffer(doneBuffer, idx);
+  removeLineFromBuffer(doneBuffer, idx);
+  addLineToBuffer(todoBuffer, undoneLine);
+  saveBuffer(doneTxt, doneBuffer);
+  saveBuffer(todoTxt, todoBuffer);
+  console.log(`The task: "${renderLine(undoneLine)}" is undone`);
 }
 
 const COMMAND_MAP = [
@@ -505,6 +526,20 @@ const COMMAND_MAP = [
     maxParamCount: 1,
     callback: doneCommand,
   },
+  {
+    name: 'archive',
+    aliases: ['archive'],
+    minParamCount: 0,
+    maxParamCount: 0,
+    callback: archiveCommand,
+  },
+  {
+    name: 'undone',
+    aliases: ['undone', 'undo'],
+    minParamCount: 1,
+    maxParamCount: 1,
+    callback: undoneCommand,
+  },
 ];
 
 // ---------- usage
@@ -520,6 +555,7 @@ if (!configFile) {
 const config = parseIni(loadFile(configFile));
 const todoTxt = (config.get('TXT_DIR') || __dirname) + '/todo.txt';
 const doneTxt = (config.get('TXT_DIR') || __dirname) + '/done.txt'; 
+const archiveTxt = (config.get('TXT_DIR') || __dirname) + '/archive.txt'; 
 const dateFormat = config.get('DATE_FORMAT') || DEFAULT_DATE_FORMAT;
 
 const overdueColor = config.get('OVERDUE_COLOR') || DEFAULT_OVERDUE_COLOR;
